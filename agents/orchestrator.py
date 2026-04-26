@@ -1,14 +1,14 @@
 """
-LangGraph Orchestrator — 11-node StateGraph with 60s global timeout.
+LangGraph Orchestrator — Full StateGraph with 60s global timeout.
 
-Wires all agents and pipeline components. State uses only typed primitives
-and IDs — no HTML blobs until the Formatter node.
+Wires all agents and pipeline components including Phase 2 intelligence.
+State uses only typed primitives and IDs — no HTML blobs until Formatter node.
 
-Conditional edges:
-  - chitchat → direct_response (skip all agents)
-  - followup + hot cache → rag_only path
-  - crag = tavily_only → skip rag_agent
-  - critic_passed = False AND retries < 2 → back to synthesize
+Phase 2 nodes:
+  - credibility_score: per-article credibility (sequential)
+  - bias_detect: per-article bias detection (sequential)
+  - source_compare: fires on entity-overlap trigger
+  - hallucination_check: post-synthesis grounding verification
 
 Circuit breaker: max 2 retries, returns max(attempts, key=score), NOT last attempt.
 """
@@ -32,6 +32,10 @@ from infrastructure.google_client import GoogleClient
 from infrastructure.query_cache import QueryCache
 from pipeline.crag_grader import CRAGGrader
 from pipeline.data_validator import DataValidator
+from pipeline.credibility_scorer import CredibilityScorer
+from pipeline.bias_detector import BiasDetector
+from pipeline.source_comparator import SourceComparator
+from pipeline.hallucination_checker import HallucinationChecker
 from retrieval.hybrid_retriever import HybridRetriever, Chunk
 from retrieval.reranker import rerank
 from session.session_manager import SessionManager
@@ -350,6 +354,159 @@ def crag_grade(state: dict) -> dict:
     return s
 
 
+def credibility_score(state: dict) -> dict:
+    """Run credibility scoring — sequential per article."""
+    s = state
+    if s.get("cancelled"):
+        return s
+
+    web_articles = s.get("web_articles", [])
+    if not web_articles:
+        return s
+
+    _emit_event_dict(s, "credibility", "status", "Scoring source credibility...")
+
+    scorer = CredibilityScorer()
+    cred_map = {}
+
+    # Build article dicts for batch context
+    batch = [
+        {
+            "url": a.url if hasattr(a, "url") else a.get("url", ""),
+            "content": a.content if hasattr(a, "content") else a.get("content", ""),
+            "outlet": a.outlet if hasattr(a, "outlet") else a.get("outlet", ""),
+            "title": a.title if hasattr(a, "title") else a.get("title", ""),
+            "published_date": a.published_date if hasattr(a, "published_date") else a.get("published_date", ""),
+        }
+        for a in web_articles
+    ]
+
+    # Sequential per article (not parallel — spreads API calls)
+    for article_dict in batch:
+        try:
+            score = scorer.score(article_dict, batch_articles=batch)
+            cred_map[article_dict["url"]] = score
+        except Exception as e:
+            logger.warning(f"Credibility scoring failed for {article_dict['url'][:60]}: {e}")
+
+    s["credibility_map"] = cred_map
+    _emit_event_dict(
+        s, "credibility", "status",
+        f"Scored {len(cred_map)} sources"
+    )
+
+    return s
+
+
+def bias_detect(state: dict) -> dict:
+    """Run bias detection — sequential per article."""
+    s = state
+    if s.get("cancelled"):
+        return s
+
+    web_articles = s.get("web_articles", [])
+    if not web_articles:
+        return s
+
+    _emit_event_dict(s, "bias", "status", "Detecting bias signals...")
+
+    detector = BiasDetector()
+    bias_map = {}
+
+    for a in web_articles:
+        article_dict = {
+            "url": a.url if hasattr(a, "url") else a.get("url", ""),
+            "content": a.content if hasattr(a, "content") else a.get("content", ""),
+            "outlet": a.outlet if hasattr(a, "outlet") else a.get("outlet", ""),
+        }
+        try:
+            result = detector.detect(article_dict)
+            bias_map[article_dict["url"]] = result
+        except Exception as e:
+            logger.warning(f"Bias detection failed for {article_dict['url'][:60]}: {e}")
+
+    s["bias_map"] = bias_map
+    _emit_event_dict(s, "bias", "status", f"Analyzed {len(bias_map)} sources")
+
+    return s
+
+
+def source_compare(state: dict) -> dict:
+    """Run source comparison if same-story trigger fires."""
+    s = state
+    if s.get("cancelled"):
+        return s
+
+    web_articles = s.get("web_articles", [])
+    if len(web_articles) < 2:
+        return s
+
+    comparator = SourceComparator()
+
+    # Build article dicts
+    batch = [
+        {
+            "url": a.url if hasattr(a, "url") else a.get("url", ""),
+            "content": a.content if hasattr(a, "content") else a.get("content", ""),
+            "outlet": a.outlet if hasattr(a, "outlet") else a.get("outlet", ""),
+            "title": a.title if hasattr(a, "title") else a.get("title", ""),
+            "published_date": a.published_date if hasattr(a, "published_date") else a.get("published_date", ""),
+        }
+        for a in web_articles
+    ]
+
+    # Check for same-story trigger (zero API calls)
+    pairs = comparator.should_compare(batch)
+
+    if pairs:
+        _emit_event_dict(s, "comparator", "status", f"Comparing {len(pairs)} article pair(s)...")
+        try:
+            # Compare all triggered articles
+            triggered_indices = set()
+            for i, j in pairs:
+                triggered_indices.add(i)
+                triggered_indices.add(j)
+            triggered_articles = [batch[i] for i in sorted(triggered_indices)]
+
+            comparison = comparator.compare(triggered_articles)
+            s["source_comparison"] = comparison
+            _emit_event_dict(
+                s, "comparator", "status",
+                f"Found {len(comparison.agreed_facts)} agreed, {len(comparison.disputed_facts)} disputed facts"
+            )
+        except Exception as e:
+            logger.warning(f"Source comparison failed: {e}")
+    else:
+        logger.debug("No same-story trigger — skipping comparison")
+
+    return s
+
+
+def hallucination_check(state: dict) -> dict:
+    """Run hallucination check on synthesis result."""
+    s = state
+    if s.get("cancelled") or not s.get("synthesis_result"):
+        return s
+
+    _emit_event_dict(s, "hallucination", "status", "Checking claim grounding...")
+
+    checker = HallucinationChecker()
+    chunks = s.get("all_chunks", [])
+
+    try:
+        report = checker.check(s["synthesis_result"], chunks)
+        s["hallucination_report"] = report
+        _emit_event_dict(
+            s, "hallucination", "status",
+            f"Grounding score: {report.grounding_score:.0%} "
+            f"({len(report.grounded_claims)} grounded, {len(report.ungrounded_claims)} ungrounded)"
+        )
+    except Exception as e:
+        logger.warning(f"Hallucination check failed: {e}")
+
+    return s
+
+
 def synthesize(state: dict) -> dict:
     """Run synthesis with gemini-2.5-pro."""
     s = state
@@ -537,17 +694,23 @@ def _emit_event_dict(state: dict, agent: str, status: str, content: str = ""):
 # ─── Build the graph ─────────────────────────────────────────────────────────
 
 def build_graph():
-    """Build the LangGraph StateGraph with all 11 nodes."""
+    """Build the LangGraph StateGraph with all nodes including Phase 2 intelligence."""
     graph = StateGraph(dict)
 
-    # Add nodes
+    # Add nodes — Phase 1 core
     graph.add_node("session_load", session_load)
     graph.add_node("intent_plan", intent_plan)
     graph.add_node("direct_end", direct_end)
     graph.add_node("parallel_dispatch", parallel_dispatch)
     graph.add_node("data_validate", data_validate)
     graph.add_node("crag_grade", crag_grade)
+    # Phase 2 intelligence nodes
+    graph.add_node("credibility_score", credibility_score)
+    graph.add_node("bias_detect", bias_detect)
+    graph.add_node("source_compare", source_compare)
+    # Core synthesis + quality
     graph.add_node("synthesize", synthesize)
+    graph.add_node("hallucination_check", hallucination_check)
     graph.add_node("critique", critique)
     graph.add_node("format_output", format_output)
 
@@ -567,8 +730,14 @@ def build_graph():
     graph.add_edge("direct_end", END)
     graph.add_edge("parallel_dispatch", "data_validate")
     graph.add_edge("data_validate", "crag_grade")
-    graph.add_edge("crag_grade", "synthesize")
-    graph.add_edge("synthesize", "critique")
+    # Phase 2: intelligence pipeline (sequential)
+    graph.add_edge("crag_grade", "credibility_score")
+    graph.add_edge("credibility_score", "bias_detect")
+    graph.add_edge("bias_detect", "source_compare")
+    graph.add_edge("source_compare", "synthesize")
+    # Post-synthesis quality gates
+    graph.add_edge("synthesize", "hallucination_check")
+    graph.add_edge("hallucination_check", "critique")
     graph.add_conditional_edges(
         "critique",
         route_after_critic,

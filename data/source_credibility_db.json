@@ -1,0 +1,357 @@
+{
+  "apnews.com": {
+    "tier": 1,
+    "score": 98,
+    "type": "wire_service"
+  },
+  "reuters.com": {
+    "tier": 1,
+    "score": 97,
+    "type": "wire_service"
+  },
+  "afp.com": {
+    "tier": 1,
+    "score": 96,
+    "type": "wire_service"
+  },
+  "nytimes.com": {
+    "tier": 1,
+    "score": 95,
+    "type": "newspaper"
+  },
+  "wsj.com": {
+    "tier": 1,
+    "score": 94,
+    "type": "newspaper"
+  },
+  "washingtonpost.com": {
+    "tier": 1,
+    "score": 93,
+    "type": "newspaper"
+  },
+  "bbc.com": {
+    "tier": 1,
+    "score": 96,
+    "type": "broadcaster"
+  },
+  "theguardian.com": {
+    "tier": 1,
+    "score": 92,
+    "type": "newspaper"
+  },
+  "ft.com": {
+    "tier": 1,
+    "score": 95,
+    "type": "financial_newspaper"
+  },
+  "bloomberg.com": {
+    "tier": 1,
+    "score": 94,
+    "type": "financial_digital_native"
+  },
+  "npr.org": {
+    "tier": 1,
+    "score": 93,
+    "type": "broadcaster"
+  },
+  "propublica.org": {
+    "tier": 1,
+    "score": 97,
+    "type": "digital_native"
+  },
+  "thehindu.com": {
+    "tier": 1,
+    "score": 90,
+    "type": "newspaper"
+  },
+  "dw.com": {
+    "tier": 1,
+    "score": 91,
+    "type": "broadcaster"
+  },
+  "nhk.or.jp": {
+    "tier": 1,
+    "score": 90,
+    "type": "broadcaster"
+  },
+  "cbc.ca": {
+    "tier": 1,
+    "score": 90,
+    "type": "broadcaster"
+  },
+  "aljazeera.com": {
+    "tier": 1,
+    "score": 90,
+    "type": "broadcaster"
+  },
+  "latimes.com": {
+    "tier": 2,
+    "score": 88,
+    "type": "newspaper"
+  },
+  "usatoday.com": {
+    "tier": 2,
+    "score": 85,
+    "type": "newspaper"
+  },
+  "thetimes.co.uk": {
+    "tier": 2,
+    "score": 86,
+    "type": "newspaper"
+  },
+  "independent.co.uk": {
+    "tier": 2,
+    "score": 84,
+    "type": "newspaper"
+  },
+  "skynews.com": {
+    "tier": 2,
+    "score": 82,
+    "type": "broadcaster"
+  },
+  "ndtv.com": {
+    "tier": 2,
+    "score": 80,
+    "type": "broadcaster"
+  },
+  "indianexpress.com": {
+    "tier": 2,
+    "score": 79,
+    "type": "newspaper"
+  },
+  "techcrunch.com": {
+    "tier": 2,
+    "score": 85,
+    "type": "digital_native"
+  },
+  "theverge.com": {
+    "tier": 2,
+    "score": 82,
+    "type": "digital_native"
+  },
+  "wired.com": {
+    "tier": 2,
+    "score": 87,
+    "type": "digital_native"
+  },
+  "arstechnica.com": {
+    "tier": 2,
+    "score": 89,
+    "type": "digital_native"
+  },
+  "cnbc.com": {
+    "tier": 2,
+    "score": 83,
+    "type": "financial_broadcaster"
+  },
+  "france24.com": {
+    "tier": 2,
+    "score": 80,
+    "type": "broadcaster"
+  },
+  "politico.com": {
+    "tier": 2,
+    "score": 85,
+    "type": "digital_native"
+  },
+  "theatlantic.com": {
+    "tier": 2,
+    "score": 88,
+    "type": "digital_native"
+  },
+  "newyorker.com": {
+    "tier": 2,
+    "score": 87,
+    "type": "digital_native"
+  },
+  "axios.com": {
+    "tier": 2,
+    "score": 84,
+    "type": "digital_native"
+  },
+  "cbsnews.com": {
+    "tier": 2,
+    "score": 86,
+    "type": "broadcaster"
+  },
+  "nbcnews.com": {
+    "tier": 2,
+    "score": 85,
+    "type": "broadcaster"
+  },
+  "abcnews.go.com": {
+    "tier": 2,
+    "score": 84,
+    "type": "broadcaster"
+  },
+  "cnn.com": {
+    "tier": 2,
+    "score": 78,
+    "type": "broadcaster"
+  },
+  "msnbc.com": {
+    "tier": 2,
+    "score": 77,
+    "type": "broadcaster"
+  },
+  "gizmodo.com": {
+    "tier": 2,
+    "score": 75,
+    "type": "digital_native"
+  },
+  "engadget.com": {
+    "tier": 2,
+    "score": 74,
+    "type": "digital_native"
+  },
+  "chicagotribune.com": {
+    "tier": 2,
+    "score": 81,
+    "type": "newspaper"
+  },
+  "bostonglobe.com": {
+    "tier": 2,
+    "score": 80,
+    "type": "newspaper"
+  },
+  "forbes.com": {
+    "tier": 2,
+    "score": 75,
+    "type": "financial_digital_native"
+  },
+  "timesofindia.indiatimes.com": {
+    "tier": 3,
+    "score": 60,
+    "type": "newspaper"
+  },
+  "hindustantimes.com": {
+    "tier": 3,
+    "score": 58,
+    "type": "newspaper"
+  },
+  "marketwatch.com": {
+    "tier": 3,
+    "score": 65,
+    "type": "financial_digital_native"
+  },
+  "huffpost.com": {
+    "tier": 3,
+    "score": 55,
+    "type": "digital_native"
+  },
+  "vice.com": {
+    "tier": 3,
+    "score": 50,
+    "type": "digital_native"
+  },
+  "foxnews.com": {
+    "tier": 3,
+    "score": 45,
+    "type": "broadcaster"
+  },
+  "reason.com": {
+    "tier": 3,
+    "score": 62,
+    "type": "digital_native"
+  },
+  "medium.com": {
+    "tier": 3,
+    "score": 48,
+    "type": "blog_aggregator"
+  },
+  "substack.com": {
+    "tier": 3,
+    "score": 42,
+    "type": "blog_aggregator"
+  },
+  "dailymail.co.uk": {
+    "tier": 3,
+    "score": 40,
+    "type": "newspaper"
+  },
+  "thesun.co.uk": {
+    "tier": 3,
+    "score": 40,
+    "type": "newspaper"
+  },
+  "zeenews.com": {
+    "tier": 3,
+    "score": 45,
+    "type": "broadcaster"
+  },
+  "xinhuanet.com": {
+    "tier": 3,
+    "score": 40,
+    "type": "state_media_foreign"
+  },
+  "reddit.com": {
+    "tier": 3,
+    "score": 45,
+    "type": "aggregator"
+  },
+  "drudgereport.com": {
+    "tier": 3,
+    "score": 40,
+    "type": "aggregator"
+  },
+  "buzzfeednews.com": {
+    "tier": 3,
+    "score": 50,
+    "type": "digital_native"
+  },
+  "wordpress.com": {
+    "tier": 3,
+    "score": 40,
+    "type": "blog_aggregator"
+  },
+  "breitbart.com": {
+    "tier": 4,
+    "score": 30,
+    "type": "digital_native"
+  },
+  "dailywire.com": {
+    "tier": 4,
+    "score": 25,
+    "type": "digital_native"
+  },
+  "infowars.com": {
+    "tier": 4,
+    "score": 10,
+    "type": "digital_native"
+  },
+  "sputniknews.com": {
+    "tier": 4,
+    "score": 20,
+    "type": "state_media_foreign"
+  },
+  "rt.com": {
+    "tier": 4,
+    "score": 22,
+    "type": "state_media_foreign"
+  },
+  "zerohedge.com": {
+    "tier": 4,
+    "score": 15,
+    "type": "digital_native"
+  },
+  "thegatewaypundit.com": {
+    "tier": 4,
+    "score": 12,
+    "type": "digital_native"
+  },
+  "naturalnews.com": {
+    "tier": 4,
+    "score": 10,
+    "type": "digital_native"
+  },
+  "wnd.com": {
+    "tier": 4,
+    "score": 18,
+    "type": "digital_native"
+  },
+  "republicworld.com": {
+    "tier": 4,
+    "score": 28,
+    "type": "broadcaster"
+  }
+}
