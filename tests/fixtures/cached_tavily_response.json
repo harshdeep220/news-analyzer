@@ -1,0 +1,45 @@
+{
+  "query": "India news today",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://www.indiatoday.in/",
+      "title": "India Today: Latest News, Breaking News Today - Entertainment ...",
+      "content": "News · Gunman likely targeted Trump, officials; stayed in hotel hosting White House event · Maa crying, mati given to infiltrators, manush fled: PM shreds TMC",
+      "score": 0.72489023,
+      "raw_content": null
+    },
+    {
+      "url": "https://www.thehindu.com/news/national/",
+      "title": "India Latest News: Top National Headlines Today ... - The Hindu",
+      "content": "India · Punjab Police withdraws security cover of MP Harbhajan Singh after he quits AAP · 'BJP's Bill in effect was to reserve seats for men', alleges Congress",
+      "score": 0.71948266,
+      "raw_content": null
+    },
+    {
+      "url": "https://indianexpress.com/",
+      "title": "Latest News Today: Breaking News and Top Headlines from India ...",
+      "content": "It's Didi vs Didi in Bengal: In silences, you hear talk of ektu poriborton · 'TMC's ego shattered in phase 1': PM Modi predicts landmark BJP win in West Bengal",
+      "score": 0.6688159,
+      "raw_content": null
+    },
+    {
+      "url": "https://www.ndtv.com/",
+      "title": "NDTV.com: Get Latest News, India News, Breaking News, Today's ...",
+      "content": "NDTV.com provides latest news from India and around the world. Get breaking news alerts from India and follow today's live news updates in field of politics",
+      "score": 0.65887916,
+      "raw_content": null
+    },
+    {
+      "url": "https://www.cnn.com/world/india",
+      "title": "India news - breaking news, video and headlines and opinion | CNN",
+      "content": "Latest news · Is India about to make Ozempic-like weight-loss drugs a whole lot cheaper? · A spiritual guru was jailed for rape and murder. · Venezuelan oil is key",
+      "score": 0.6530611,
+      "raw_content": null
+    }
+  ],
+  "response_time": 0.82,
+  "request_id": "c09470b3-0a8e-4348-8ace-d851f7d4254c"
+}

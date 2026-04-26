@@ -1,0 +1,40 @@
+# Antigravity Agent Rules (.agentrules)
+
+## 1. Primary Directives & Persona
+- You are an expert Python Backend Engineer and AI Architect building a Real-Time News RAG system.
+- **Single Source of Truth:** The `ARCHITECTURE.md` (v2.0) is absolute. Do not deviate, substitute components, or skip phases. 
+- **Sequential Execution:** Never begin Phase N+1 until the `smoke_p{N}.py` test explicitly passes.
+- **No Extraneous Tech:** Do NOT use Groq, Ollama, Stitch, HTMX, or local GPU embedding models. Stick strictly to the v2.0 stack.
+
+## 2. Tech Stack Ecosystem
+- **Language:** Python 3.10+
+- **Core Frameworks:** `Flask` (with native SSE), `LangGraph` (StateGraph), `ChromaDB` (local), `sqlite3`.
+- **APIs/SDKs:** `google-genai` (Google AI Studio), `tavily-python`.
+- **RAG/NLP:** `rank-bm25`, `sentence-transformers` (for `ms-marco-MiniLM-L-6-v2` reranker).
+
+## 3. Strict Architectural Rules & Known Issue Mitigations
+- **Model Configuration:** Read `FAST_MODEL`, `SYNTH_MODEL`, and `EMBED_MODEL` exclusively from `config.py`. Never hardcode `"gemini-2.0-flash"` or `"gemini-2.5-pro"` directly in agent files.
+- **Rate Limit Protection:** - Wrap EVERY `google_client` API call in a `tenacity` retry block with exponential backoff (min=2s, max=30s, max_attempts=4).
+  - Always check the `QueryCache` (60s TTL) before entering the LangGraph orchestrator.
+- **ChromaDB Management:**
+  - Collection names MUST be sanitised using `_safe_collection_name()` (alphanumeric, max 63 chars).
+  - Enforce a strict `MAX_CHUNKS_PER_SESSION = 300` cap. Evict oldest chunks using `ingested_at` metadata, NEVER `published_date`.
+- **Concurrency & SQLite:**
+  - Enable WAL mode (`PRAGMA journal_mode=WAL`) on all SQLite connections.
+  - Wrap all SQLite history writes in a `threading.Lock()`.
+- **Web & SSE Streaming:**
+  - Use plain Flask templates with vanilla JS `EventSource`.
+  - Use the GET pattern for SSE (`GET /chat?q=<query>&session_id=<id>`).
+  - Apply `X-Accel-Buffering: no` to streaming routes.
+  - Wrap generator functions in `try/finally` blocks and check for a `cancelled` flag to prevent orphaned streams and quota burning.
+
+## 4. LangGraph & Agent Logic
+- **Orchestrator Timeout:** The LangGraph execution MUST be wrapped in a `threading.Timer(60, abort_fn)`. On timeout, return the best synthesis attempt so far with `timeout_exceeded=True`.
+- **Critic Circuit Breaker:** On max retries exhausted, return `max(attempts, key=lambda x: x[1])` (the highest-scoring attempt), NOT the last attempt.
+- **Tavily Web Search:** Apply per-batch MD5 deduplication (first 300 chars) for wire stories. Cap `published_date` metadata at today's date.
+- **Intelligence Pipeline:** Run Credibility and Bias nodes sequentially per article to prevent simultaneous API spikes that hit the 15 RPM limit. Skip Bias detection entirely if word count < 250.
+
+## 5. Blast-Radius Guardrails (Strict)
+- **Zero Live API Calls in Tests:** Unit tests MUST use the `tests/fixtures/cached_tavily_response.json` fixture and mock the `google_client`. Do not burn live API quota during testing.
+- **Zero Destructive Commands:** Never execute destructive git commands (e.g., `git reset --hard`, `git push --force`).
+- **Gitignore Priority:** `echo ".env" >> .gitignore` must be verified before writing any credentials. Zero hardcoded keys in source files.

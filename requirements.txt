@@ -1,0 +1,13 @@
+google-genai
+langchain
+langgraph
+chromadb
+tavily-python
+rank-bm25
+sentence-transformers
+flask
+flask-cors
+tenacity
+langdetect
+pytest
+python-dotenv
