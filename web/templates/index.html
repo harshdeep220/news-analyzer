@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}NewsForge — AI-Powered News Research{% endblock %}
+
+{% block body %}
+<div class="app-shell">
+
+    <!-- ─── Sidebar ───────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1 class="logo">
+                <span class="logo-icon">⚡</span> NewsForge
+            </h1>
+            <button class="btn-new-session" id="btn-new-session" title="New Research Session">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+        </div>
+        <div class="session-list" id="session-list">
+            {% for s in sessions %}
+            <div class="session-item {% if forloop.first %}active{% endif %}"
+                 data-session-id="{{ s.id }}"
+                 onclick="switchSession('{{ s.id }}')">
+                <div class="session-label">{{ s.topic_label }}</div>
+                <div class="session-meta">{{ s.message_count }} msg</div>
+            </div>
+            {% empty %}
+            <div class="session-empty">No sessions yet</div>
+            {% endfor %}
+        </div>
+    </aside>
+
+    <!-- ─── Main Content ──────────────────────────────────── -->
+    <main class="main-content">
+
+        <!-- Chat Messages -->
+        <div class="chat-container" id="chat-container">
+            <div class="welcome-msg" id="welcome-msg">
+                <div class="welcome-icon">🔍</div>
+                <h2>Welcome to NewsForge</h2>
+                <p>AI-powered news research with credibility scoring, bias detection, and claim verification.</p>
+                <div class="welcome-suggestions">
+                    <button class="suggestion-chip" onclick="submitQuery(this.textContent)">Latest AI regulation developments</button>
+                    <button class="suggestion-chip" onclick="submitQuery(this.textContent)">What's happening with quantum computing?</button>
+                    <button class="suggestion-chip" onclick="submitQuery(this.textContent)">Recent climate policy changes</button>
+                </div>
+            </div>
+            <div class="messages" id="messages"></div>
+        </div>
+
+        <!-- Agent Trace Panel -->
+        <div class="trace-panel" id="trace-panel" style="display: none;">
+            <div class="trace-header">
+                <span class="trace-title">Agent Pipeline</span>
+                <span class="trace-timer" id="trace-timer">0.0s</span>
+            </div>
+            <div class="trace-steps" id="trace-steps"></div>
+        </div>
+
+        <!-- Input Bar -->
+        <div class="input-bar">
+            <form id="chat-form" onsubmit="handleSubmit(event)">
+                <div class="input-wrapper">
+                    <textarea id="query-input"
+                              placeholder="Ask about any news topic..."
+                              rows="1"
+                              autocomplete="off"></textarea>
+                    <button type="submit" class="btn-send" id="btn-send" title="Send">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Pass initial session ID
+    const INITIAL_SESSION_ID = "{{ sessions.0.id|default:'' }}";
+</script>
+<script src="{% static 'js/app.js' %}"></script>
+{% endblock %}

@@ -217,13 +217,13 @@ class CredibilityScorer:
             if db_domain in domain or domain in db_domain:
                 return entry.get("score", 50)
 
-        # Unknown source
-        return 30
+        # Unknown source — neutral, not negative
+        return 50
 
     def _score_corroboration(self, article: dict, batch_articles: list[dict]) -> int:
         """Score based on how many other sources report same claims."""
         if not batch_articles or len(batch_articles) < 2:
-            return 10  # Can't corroborate with no other sources
+            return 45  # Can't corroborate — neutral, not a penalty
 
         url = article.get("url", "")
         title = article.get("title", "").lower()
@@ -251,39 +251,61 @@ class CredibilityScorer:
                 else:
                     match_count += 1
 
-        # Scoring: 0→10, 1→30, 2-3→60, 4+→85
+        # Scoring: 0→45, 1→55, 2-3→70, 4+→85
         if match_count == 0:
-            return 10
+            return 45
         elif match_count < 2:
-            return 30
+            return 55
         elif match_count < 4:
             return 60
         else:
             return 85
 
     def _score_content_quality(self, article: dict) -> int:
-        """Score content quality using Flash."""
+        """Score content quality using text heuristics — zero API calls."""
         content = article.get("content", "")
         if len(content) < 200:
-            return 30
+            return 35
 
-        try:
-            response = self._client.generate(
-                prompt=(
-                    f"Rate the journalistic quality of this article excerpt on a scale of 0-100. "
-                    f"Consider: attribution of claims, use of quotes, factual specificity, "
-                    f"professional language, and balanced presentation.\n\n"
-                    f"Article excerpt:\n{content[:1000]}\n\n"
-                    f"Return ONLY a single integer 0-100."
-                ),
-                model=FAST_MODEL,
-                system="You are a journalism quality evaluator. Return only a number.",
-            )
-            score = int(response.strip().split()[0])
-            return max(0, min(100, score))
-        except Exception as e:
-            logger.warning(f"Content quality scoring failed: {e}")
-            return 50
+        score = 55  # Base score
+
+        # Attribution signals (quotes, "said", "according to")
+        import re
+        quote_count = content.count('"') // 2
+        attribution_words = len(re.findall(
+            r'\b(said|according to|reported|confirmed|announced|stated|told)\b',
+            content, re.IGNORECASE
+        ))
+        if attribution_words >= 3:
+            score += 15
+        elif attribution_words >= 1:
+            score += 8
+
+        if quote_count >= 2:
+            score += 10
+        elif quote_count >= 1:
+            score += 5
+
+        # Factual specificity (numbers, dates, percentages)
+        numbers = len(re.findall(r'\b\d+[\.,]?\d*%?\b', content[:2000]))
+        if numbers >= 5:
+            score += 10
+        elif numbers >= 2:
+            score += 5
+
+        # Content length (longer = more thorough)
+        word_count = len(content.split())
+        if word_count >= 800:
+            score += 10
+        elif word_count >= 400:
+            score += 5
+
+        # Proper nouns density (names, places = specificity)
+        proper_nouns = len(re.findall(r'\b[A-Z][a-z]{2,}\b', content[:1500]))
+        if proper_nouns >= 15:
+            score += 5
+
+        return min(100, max(0, score))
 
     def _score_freshness(self, article: dict) -> int:
         """Score based on publication recency."""

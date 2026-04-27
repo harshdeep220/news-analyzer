@@ -1,0 +1,1 @@
+# newsrag Django project

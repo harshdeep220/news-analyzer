@@ -38,9 +38,7 @@ from pipeline.source_comparator import SourceComparator
 from pipeline.hallucination_checker import HallucinationChecker
 from retrieval.hybrid_retriever import HybridRetriever, Chunk
 from retrieval.reranker import rerank
-from session.session_manager import SessionManager
-from session.history_store import HistoryStore
-from session.topic_labeler import TopicLabeler
+from chat.services import SessionManager, HistoryStore, TopicLabeler
 from config import (
     ORCHESTRATOR_TIMEOUT,
     CRITIC_MAX_RETRIES,
@@ -413,7 +411,7 @@ def bias_detect(state: dict) -> dict:
     detector = BiasDetector()
     bias_map = {}
 
-    for a in web_articles:
+    for a in web_articles[:3]:  # Cap at 3 to conserve API budget
         article_dict = {
             "url": a.url if hasattr(a, "url") else a.get("url", ""),
             "content": a.content if hasattr(a, "content") else a.get("content", ""),
@@ -680,15 +678,24 @@ def direct_end(state: dict) -> dict:
 # ─── Helper for dict-based state ─────────────────────────────────────────────
 
 def _emit_event_dict(state: dict, agent: str, status: str, content: str = ""):
-    """Log an SSE event to dict-based state."""
-    if "events" not in state:
-        state["events"] = []
-    state["events"].append({
+    """Log an SSE event to dict-based state and push to queue if present."""
+    event = {
         "type": status,
         "agent": agent,
         "content": content,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+    if "events" not in state:
+        state["events"] = []
+    state["events"].append(event)
+
+    # Push to SSE queue if present (Django view bridge)
+    eq = state.get("event_queue")
+    if eq is not None:
+        try:
+            eq.put(event)
+        except Exception:
+            pass
 
 
 # ─── Build the graph ─────────────────────────────────────────────────────────

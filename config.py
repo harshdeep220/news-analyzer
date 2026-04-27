@@ -34,7 +34,7 @@ RETRY_MAX_WAIT = 30                      # Tenacity exponential backoff max (sec
 RETRY_MAX_ATTEMPTS = 4                   # Tenacity max retry attempts
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
-ORCHESTRATOR_TIMEOUT = 60                # Hard abort (seconds)
+ORCHESTRATOR_TIMEOUT = 120               # Hard abort (seconds) — expanded for Phase 2 intelligence
 CRITIC_MAX_RETRIES = 2                   # Circuit breaker max retries
 CRITIC_PASS_THRESHOLD = 0.4             # Minimum score to pass regardless of flag
 
