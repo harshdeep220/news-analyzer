@@ -137,7 +137,6 @@ def chat_stream(request):
     )
     response["X-Accel-Buffering"] = "no"
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response["Connection"] = "keep-alive"
     return response
 
 
@@ -152,11 +151,21 @@ def _serialize_result(result: dict) -> dict:
     synth = result.get("synthesis_result")
     if synth and hasattr(synth, "answer"):
         serialized["answer"] = synth.answer
-        if hasattr(synth, "citations"):
-            serialized["citations"] = [
-                {"url": c.url, "title": getattr(c, "title", ""), "outlet": getattr(c, "outlet", "")}
-                for c in synth.citations
-            ] if synth.citations else []
+        if hasattr(synth, "citations") and synth.citations:
+            serialized["citations"] = []
+            for c in synth.citations:
+                if isinstance(c, dict):
+                    serialized["citations"].append({
+                        "url": c.get("url", ""),
+                        "title": c.get("title", ""),
+                        "outlet": c.get("outlet", ""),
+                    })
+                else:
+                    serialized["citations"].append({
+                        "url": getattr(c, "url", ""),
+                        "title": getattr(c, "title", ""),
+                        "outlet": getattr(c, "outlet", ""),
+                    })
     elif result.get("direct_response"):
         serialized["answer"] = result["direct_response"]
 
@@ -171,23 +180,27 @@ def _serialize_result(result: dict) -> dict:
     # Intelligence layer
     cred_map = result.get("credibility_map", {})
     if cred_map:
-        serialized["credibility"] = {
-            url: {
-                "total": cred.total if hasattr(cred, "total") else cred.get("total", 0),
-                "signals": cred.signals if hasattr(cred, "signals") else cred.get("signals", {}),
-            }
-            for url, cred in cred_map.items()
-        }
+        serialized["credibility"] = {}
+        for url, cred in cred_map.items():
+            try:
+                serialized["credibility"][url] = {
+                    "total": cred.total if hasattr(cred, "total") else cred.get("total", 0),
+                    "signals": cred.signals if hasattr(cred, "signals") else cred.get("signals", {}),
+                }
+            except Exception:
+                serialized["credibility"][url] = {"total": 0, "signals": {}}
 
     bias_map = result.get("bias_map", {})
     if bias_map:
-        serialized["bias"] = {
-            url: {
-                "lean": bias.lean if hasattr(bias, "lean") else bias.get("lean", ""),
-                "confidence": bias.confidence if hasattr(bias, "confidence") else bias.get("confidence", 0),
-            }
-            for url, bias in bias_map.items()
-        }
+        serialized["bias"] = {}
+        for url, bias in bias_map.items():
+            try:
+                serialized["bias"][url] = {
+                    "lean": bias.lean if hasattr(bias, "lean") else bias.get("lean", ""),
+                    "confidence": bias.confidence if hasattr(bias, "confidence") else bias.get("confidence", 0),
+                }
+            except Exception:
+                serialized["bias"][url] = {"lean": "", "confidence": 0}
 
     hallucination = result.get("hallucination_report")
     if hallucination:

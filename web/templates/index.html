@@ -21,8 +21,13 @@
             <div class="session-item {% if forloop.first %}active{% endif %}"
                  data-session-id="{{ s.id }}"
                  onclick="switchSession('{{ s.id }}')">
-                <div class="session-label">{{ s.topic_label }}</div>
-                <div class="session-meta">{{ s.message_count }} messages</div>
+                <div class="session-info">
+                    <div class="session-label">{{ s.topic_label }}</div>
+                    <div class="session-meta">{{ s.message_count }} messages</div>
+                </div>
+                <button class="btn-delete" onclick="event.stopPropagation(); deleteSession('{{ s.id }}')" title="Delete">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
             </div>
             {% empty %}
             <div class="session-empty">No sessions yet</div>

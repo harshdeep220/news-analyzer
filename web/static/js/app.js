@@ -405,14 +405,39 @@ function refreshSessionList() {
                 `<div class="session-item ${s.id === currentSessionId ? "active" : ""}"
                      data-session-id="${s.id}"
                      onclick="switchSession('${s.id}')">
-                    <div class="session-label">${esc(s.topic_label)}</div>
-                    <div class="session-meta">${s.message_count} messages</div>
+                    <div class="session-info">
+                        <div class="session-label">${esc(s.topic_label)}</div>
+                        <div class="session-meta">${s.message_count} messages</div>
+                    </div>
+                    <button class="btn-delete" onclick="event.stopPropagation(); deleteSession('${s.id}')" title="Delete">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
                 </div>`
             ).join("");
         });
 }
 
 document.getElementById("btn-new-session").addEventListener("click", () => createNewSession());
+
+function deleteSession(id) {
+    if (!confirm("Delete this session?")) return;
+
+    fetch(`/api/session/${id}/delete`, { method: "DELETE" })
+        .then(r => r.json())
+        .then(() => {
+            // If we deleted the active session, create a new one
+            if (id === currentSessionId) {
+                currentSessionId = null;
+                document.getElementById("messages").innerHTML = "";
+                const w = document.getElementById("welcome-msg");
+                if (w) w.style.display = "flex";
+                createNewSession();
+            } else {
+                refreshSessionList();
+            }
+        })
+        .catch(e => console.error("Delete failed:", e));
+}
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
