@@ -1,13 +1,23 @@
+# Core
 google-genai
 langchain
 langgraph
 chromadb
-tavily-python
-rank-bm25
+
+# Retrieval & Embedding
 sentence-transformers
-flask
-flask-cors
+rank-bm25
+
+# Web Search
+tavily-python
+
+# Web Framework
+django
+
+# Utilities
 tenacity
 langdetect
-pytest
 python-dotenv
+
+# Testing
+pytest
