@@ -1,69 +1,62 @@
 /**
- * NewsForge — Chat UI with Live Agent Trace
+ * News Analyzer — Chat UI with Gemini-style inline agent trace.
  *
- * Uses native EventSource (SSE) — no JS dependencies.
- * Each pipeline event updates the trace panel in real-time:
- *   ○ waiting → ⏳ running → ✅ done
+ * The trace renders INSIDE the chat area as a collapsible "Analyzing…"
+ * block above the response, exactly like Gemini's "Thinking" section.
+ *
+ * SSE fix: uses fetch + ReadableStream instead of EventSource to avoid
+ * Django buffering issues with the native EventSource API.
  */
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let currentSessionId = INITIAL_SESSION_ID || null;
-let activeSource = null;   // EventSource instance
-let traceTimer = null;     // Timer interval
-let traceStartTime = 0;
+let abortController = null;
 let isProcessing = false;
 
-// ─── Agent pipeline steps (in execution order) ──────────────────────────────
-const PIPELINE_STEPS = [
-    { id: "session",        label: "Session" },
-    { id: "intent_planner", label: "Intent" },
-    { id: "web_search",     label: "Web Search" },
-    { id: "rag_agent",      label: "RAG" },
-    { id: "data_validator",  label: "Validate" },
-    { id: "crag_grader",    label: "CRAG" },
-    { id: "credibility",    label: "Credibility" },
-    { id: "bias",           label: "Bias" },
-    { id: "comparator",     label: "Compare" },
-    { id: "synthesis",      label: "Synthesis" },
-    { id: "hallucination",  label: "Hallucination" },
-    { id: "critic",         label: "Critic" },
-    { id: "formatter",      label: "Format" },
+// Pipeline step definitions
+const STEPS = [
+    { id: "session",         label: "Loading session" },
+    { id: "intent_planner",  label: "Analyzing intent" },
+    { id: "rag_agent",       label: "Searching knowledge base" },
+    { id: "web_search",      label: "Searching the web" },
+    { id: "data_validator",  label: "Validating sources" },
+    { id: "crag_grader",     label: "Grading relevance" },
+    { id: "credibility",     label: "Scoring credibility" },
+    { id: "bias",            label: "Detecting bias" },
+    { id: "comparator",      label: "Comparing sources" },
+    { id: "synthesis",       label: "Synthesizing answer" },
+    { id: "hallucination",   label: "Checking claims" },
+    { id: "critic",          label: "Quality review" },
+    { id: "formatter",       label: "Formatting response" },
 ];
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-    const textarea = document.getElementById("query-input");
+    const ta = document.getElementById("query-input");
 
-    // Auto-resize textarea
-    textarea.addEventListener("input", () => {
-        textarea.style.height = "auto";
-        textarea.style.height = textarea.scrollHeight + "px";
+    ta.addEventListener("input", () => {
+        ta.style.height = "auto";
+        ta.style.height = ta.scrollHeight + "px";
     });
 
-    // Shift+Enter for newline, Enter to submit
-    textarea.addEventListener("keydown", (e) => {
+    ta.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit(e);
         }
     });
 
-    // Create initial session if none exists
-    if (!currentSessionId) {
-        createNewSession();
-    }
+    if (!currentSessionId) createNewSession();
 });
 
-
-// ─── Submit Handler ──────────────────────────────────────────────────────────
+// ─── Submit ──────────────────────────────────────────────────────────────────
 
 function handleSubmit(e) {
     e.preventDefault();
     const input = document.getElementById("query-input");
-    const query = input.value.trim();
-    if (!query || isProcessing) return;
-
-    submitQuery(query);
+    const q = input.value.trim();
+    if (!q || isProcessing) return;
+    submitQuery(q);
     input.value = "";
     input.style.height = "auto";
 }
@@ -78,167 +71,221 @@ function submitQuery(query) {
     isProcessing = true;
     document.getElementById("btn-send").disabled = true;
 
-    // Hide welcome, show messages
     const welcome = document.getElementById("welcome-msg");
     if (welcome) welcome.style.display = "none";
 
-    // Add user message
-    appendMessage("user", query);
+    // User message
+    addMsg("user", query);
 
-    // Show trace panel
-    showTracePanel();
+    // Create inline trace block (Gemini-style)
+    const traceId = "trace-" + Date.now();
+    createTraceBlock(traceId);
 
-    // Start SSE
+    // Start SSE via fetch (avoids Django buffering issue with EventSource)
     const url = `/api/chat?q=${encodeURIComponent(query)}&session_id=${currentSessionId}`;
 
-    if (activeSource) {
-        activeSource.close();
-    }
+    abortController = new AbortController();
+    const startTime = Date.now();
 
-    activeSource = new EventSource(url);
+    fetch(url, { signal: abortController.signal })
+        .then(response => {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
 
-    activeSource.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleSSEEvent(data);
-        } catch (err) {
-            console.error("SSE parse error:", err);
-        }
-    };
+            function read() {
+                reader.read().then(({ done, value }) => {
+                    if (done) {
+                        finishProcessing(traceId);
+                        return;
+                    }
 
-    activeSource.onerror = () => {
-        activeSource.close();
-        activeSource = null;
-        stopTrace();
-        isProcessing = false;
-        document.getElementById("btn-send").disabled = false;
-    };
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Parse SSE lines
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop(); // keep incomplete line
+
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                handleEvent(data, traceId, startTime);
+                            } catch (e) { /* skip malformed */ }
+                        }
+                    }
+
+                    read();
+                }).catch(() => finishProcessing(traceId));
+            }
+            read();
+        })
+        .catch(() => finishProcessing(traceId));
 }
 
 
 // ─── SSE Event Handler ──────────────────────────────────────────────────────
 
-function handleSSEEvent(data) {
+function handleEvent(data, traceId, startTime) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
     if (data.type === "status") {
-        updateTraceStep(data.agent, "done", data.content);
-        // Mark next step as running
-        activateNextStep(data.agent);
-    } else if (data.type === "done") {
-        stopTrace();
+        markStep(traceId, data.agent, "done", data.content, elapsed);
+        // Activate next step
+        const idx = STEPS.findIndex(s => s.id === data.agent);
+        if (idx >= 0 && idx < STEPS.length - 1) {
+            markStep(traceId, STEPS[idx + 1].id, "running");
+        }
+        updateTraceHeader(traceId, data.agent, elapsed);
+    }
+    else if (data.type === "done") {
         renderResult(data.result);
-        isProcessing = false;
-        document.getElementById("btn-send").disabled = false;
-        if (activeSource) {
-            activeSource.close();
-            activeSource = null;
-        }
-        refreshSessionList();
-    } else if (data.type === "error") {
-        stopTrace();
-        appendMessage("assistant", `Error: ${data.content || "Pipeline failed"}`);
-        isProcessing = false;
-        document.getElementById("btn-send").disabled = false;
-        if (activeSource) {
-            activeSource.close();
-            activeSource = null;
-        }
+        collapseTrace(traceId, elapsed);
+        finishProcessing(traceId);
+    }
+    else if (data.type === "error") {
+        addMsg("assistant", `An error occurred: ${data.content || "Pipeline failed"}`);
+        collapseTrace(traceId, elapsed);
+        finishProcessing(traceId);
     }
 }
 
+function finishProcessing(traceId) {
+    isProcessing = false;
+    document.getElementById("btn-send").disabled = false;
+    abortController = null;
+    refreshSessionList();
+}
 
-// ─── Trace Panel ─────────────────────────────────────────────────────────────
 
-function showTracePanel() {
-    const panel = document.getElementById("trace-panel");
-    const steps = document.getElementById("trace-steps");
-    panel.style.display = "block";
+// ─── Inline Trace Block (Gemini-style) ──────────────────────────────────────
 
-    // Build step chips
-    steps.innerHTML = PIPELINE_STEPS.map(step =>
-        `<div class="trace-step waiting" id="trace-${step.id}">
-            <span class="step-icon">○</span>
-            <span>${step.label}</span>
-        </div>`
-    ).join("");
+function createTraceBlock(traceId) {
+    const container = document.getElementById("messages");
+
+    const block = document.createElement("div");
+    block.className = "msg msg-assistant";
+    block.id = traceId;
+    block.innerHTML = `
+        <div class="trace-block">
+            <button class="trace-toggle open" onclick="toggleTrace('${traceId}')">
+                <span class="trace-spinner"></span>
+                <span class="trace-label">Analyzing...</span>
+                <span class="toggle-icon">▶</span>
+            </button>
+            <div class="trace-body open" id="${traceId}-body">
+                ${STEPS.map((s, i) =>
+                    `<div class="trace-step waiting" id="${traceId}-${s.id}">
+                        <span class="step-icon">${i === 0 ? '' : '○'}</span>
+                        <span class="step-name">${s.label}</span>
+                        <span class="trace-elapsed"></span>
+                    </div>`
+                ).join('')}
+            </div>
+        </div>
+    `;
+
+    container.appendChild(block);
 
     // Mark first step as running
-    const first = document.getElementById("trace-session");
+    const first = document.getElementById(`${traceId}-${STEPS[0].id}`);
     if (first) {
-        first.classList.remove("waiting");
-        first.classList.add("running");
-        first.querySelector(".step-icon").textContent = "⏳";
+        first.className = "trace-step running";
+        first.querySelector(".step-icon").innerHTML = "";
     }
 
-    // Start timer
-    traceStartTime = Date.now();
-    traceTimer = setInterval(() => {
-        const elapsed = ((Date.now() - traceStartTime) / 1000).toFixed(1);
-        document.getElementById("trace-timer").textContent = elapsed + "s";
-    }, 100);
+    scrollBottom();
 }
 
-function updateTraceStep(agentId, status, content) {
-    const step = document.getElementById(`trace-${agentId}`);
-    if (!step) return;
+function markStep(traceId, stepId, status, detail, elapsed) {
+    const el = document.getElementById(`${traceId}-${stepId}`);
+    if (!el) return;
 
-    step.className = `trace-step ${status}`;
+    el.className = `trace-step ${status}`;
+    const icon = el.querySelector(".step-icon");
+
     if (status === "done") {
-        step.querySelector(".step-icon").textContent = "✅";
-    } else if (status === "running") {
-        step.querySelector(".step-icon").textContent = "⏳";
-    }
-}
-
-function activateNextStep(currentAgentId) {
-    const idx = PIPELINE_STEPS.findIndex(s => s.id === currentAgentId);
-    if (idx >= 0 && idx < PIPELINE_STEPS.length - 1) {
-        const next = PIPELINE_STEPS[idx + 1];
-        const nextEl = document.getElementById(`trace-${next.id}`);
-        if (nextEl && nextEl.classList.contains("waiting")) {
-            nextEl.classList.remove("waiting");
-            nextEl.classList.add("running");
-            nextEl.querySelector(".step-icon").textContent = "⏳";
+        icon.textContent = "✓";
+        if (elapsed) {
+            el.querySelector(".trace-elapsed").textContent = elapsed + "s";
         }
+    } else if (status === "running") {
+        icon.innerHTML = "";  // CSS handles spinner via ::after
+    }
+
+    scrollBottom();
+}
+
+function updateTraceHeader(traceId, agentId, elapsed) {
+    const block = document.getElementById(traceId);
+    if (!block) return;
+    const step = STEPS.find(s => s.id === agentId);
+    const label = block.querySelector(".trace-label");
+    if (label && step) {
+        label.textContent = `${step.label}... (${elapsed}s)`;
     }
 }
 
-function stopTrace() {
-    if (traceTimer) {
-        clearInterval(traceTimer);
-        traceTimer = null;
+function collapseTrace(traceId, elapsed) {
+    const block = document.getElementById(traceId);
+    if (!block) return;
+
+    // Update header to final state
+    const label = block.querySelector(".trace-label");
+    if (label) label.textContent = `Analysis complete (${elapsed}s)`;
+
+    // Replace spinner with checkmark
+    const spinner = block.querySelector(".trace-spinner");
+    if (spinner) {
+        spinner.className = "";
+        spinner.textContent = "✓";
+        spinner.style.color = "var(--green)";
+        spinner.style.fontWeight = "700";
+        spinner.style.fontSize = "14px";
     }
-    // Mark all remaining running steps as done
-    document.querySelectorAll(".trace-step.running").forEach(el => {
-        el.classList.remove("running");
-        el.classList.add("done");
-        el.querySelector(".step-icon").textContent = "✅";
+
+    // Mark all remaining steps as done
+    block.querySelectorAll(".trace-step.running, .trace-step.waiting").forEach(el => {
+        el.className = "trace-step done";
+        el.querySelector(".step-icon").textContent = "✓";
     });
+
+    // Collapse
+    const toggle = block.querySelector(".trace-toggle");
+    const body = document.getElementById(`${traceId}-body`);
+    if (toggle) toggle.classList.remove("open");
+    if (body) body.classList.remove("open");
 }
 
-function hideTracePanel() {
-    document.getElementById("trace-panel").style.display = "none";
+function toggleTrace(traceId) {
+    const toggle = document.querySelector(`#${traceId} .trace-toggle`);
+    const body = document.getElementById(`${traceId}-body`);
+    if (toggle && body) {
+        toggle.classList.toggle("open");
+        body.classList.toggle("open");
+    }
 }
 
 
 // ─── Message Rendering ──────────────────────────────────────────────────────
 
-function appendMessage(role, content) {
+function addMsg(role, content) {
     const container = document.getElementById("messages");
     const div = document.createElement("div");
-    div.className = `message message-${role}`;
+    div.className = `msg msg-${role}`;
 
-    const contentDiv = document.createElement("div");
-    contentDiv.className = "message-content";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
 
     if (role === "user") {
-        contentDiv.textContent = content;
+        bubble.textContent = content;
     } else {
-        contentDiv.innerHTML = formatMarkdown(content);
+        bubble.innerHTML = md(content);
     }
 
-    div.appendChild(contentDiv);
+    div.appendChild(bubble);
     container.appendChild(div);
-    scrollToBottom();
+    scrollBottom();
 }
 
 function renderResult(result) {
@@ -246,129 +293,103 @@ function renderResult(result) {
 
     const container = document.getElementById("messages");
     const div = document.createElement("div");
-    div.className = "message message-assistant";
+    div.className = "msg msg-assistant";
 
-    let html = '<div class="message-content">';
-
-    // Main answer
-    const answer = result.answer_html || result.answer || "No response generated";
-    html += formatMarkdown(answer);
+    let html = '<div class="bubble">';
+    const answer = result.answer_html || result.answer || "No response generated.";
+    html += md(answer);
 
     // Credibility badges
-    if (result.credibility && Object.keys(result.credibility).length > 0) {
-        html += '<div class="intel-section">';
-        html += '<div class="intel-title">Source Credibility</div>';
+    if (result.credibility && Object.keys(result.credibility).length) {
+        html += '<div class="intel"><div class="intel-label">Source Credibility</div>';
         for (const [url, cred] of Object.entries(result.credibility)) {
-            const score = cred.total;
-            const colorClass = score > 70 ? "cred-high" : score > 40 ? "cred-mid" : "cred-low";
-            const domain = new URL(url).hostname.replace("www.", "");
-            html += `<span class="cred-badge ${colorClass}" title="${JSON.stringify(cred.signals || {})}">
-                <span class="cred-score">${score}</span> ${domain}
+            const s = cred.total;
+            const cls = s > 70 ? "badge-green" : s > 40 ? "badge-amber" : "badge-red";
+            let domain;
+            try { domain = new URL(url).hostname.replace("www.", ""); } catch { domain = url.slice(0, 30); }
+            html += `<span class="badge ${cls}" title='${esc(JSON.stringify(cred.signals || {}))}'>
+                <span class="badge-score">${s}</span> ${esc(domain)}
             </span>`;
         }
         html += '</div>';
     }
 
-    // Bias indicators
-    if (result.bias && Object.keys(result.bias).length > 0) {
-        const visibleBias = Object.entries(result.bias).filter(
-            ([_, b]) => b.lean && b.lean !== "insufficient_content"
-        );
-        if (visibleBias.length > 0) {
-            html += '<div class="intel-section">';
-            html += '<div class="intel-title">Bias Analysis</div>';
-            for (const [url, bias] of visibleBias) {
-                const domain = new URL(url).hostname.replace("www.", "");
-                html += `<span class="cred-badge cred-mid" title="Automated classification">
-                    ${bias.lean} (${(bias.confidence * 100).toFixed(0)}%) — ${domain}
-                </span>`;
+    // Bias
+    if (result.bias) {
+        const visible = Object.entries(result.bias).filter(([_, b]) => b.lean && b.lean !== "insufficient_content");
+        if (visible.length) {
+            html += '<div class="intel"><div class="intel-label">Bias Analysis</div>';
+            for (const [url, bias] of visible) {
+                let domain;
+                try { domain = new URL(url).hostname.replace("www.", ""); } catch { domain = url.slice(0, 30); }
+                html += `<span class="badge badge-amber">${esc(bias.lean)} (${(bias.confidence * 100).toFixed(0)}%) — ${esc(domain)}</span>`;
             }
             html += '</div>';
         }
     }
 
-    // Hallucination warnings
-    if (result.hallucination && result.hallucination.ungrounded_claims &&
-        result.hallucination.ungrounded_claims.length > 0) {
+    // Hallucination
+    if (result.hallucination?.ungrounded_claims?.length) {
         const score = (result.hallucination.grounding_score * 100).toFixed(0);
-        html += `<div class="halluc-warning">
-            <div class="halluc-title">Grounding Score: ${score}% — ${result.hallucination.ungrounded_claims.length} unverified claim(s)</div>`;
-        for (const claim of result.hallucination.ungrounded_claims.slice(0, 5)) {
-            html += `<div class="halluc-claim">${escapeHtml(claim)}</div>`;
-        }
+        html += `<div class="halluc-box"><div class="halluc-title">Grounding: ${score}% — ${result.hallucination.ungrounded_claims.length} unverified claim(s)</div>`;
+        result.hallucination.ungrounded_claims.slice(0, 5).forEach(c => {
+            html += `<div class="halluc-claim">${esc(c)}</div>`;
+        });
         html += '</div>';
     }
 
     html += '</div>';
     div.innerHTML = html;
     container.appendChild(div);
-    scrollToBottom();
+    scrollBottom();
 }
 
 
 // ─── Session Management ─────────────────────────────────────────────────────
 
-function createNewSession(callback) {
+function createNewSession(cb) {
     fetch("/api/session/new", { method: "POST" })
         .then(r => r.json())
         .then(data => {
             currentSessionId = data.session_id;
             refreshSessionList();
-
-            // Clear chat
             document.getElementById("messages").innerHTML = "";
-            const welcome = document.getElementById("welcome-msg");
-            if (welcome) welcome.style.display = "flex";
-
-            if (callback) callback();
+            const w = document.getElementById("welcome-msg");
+            if (w) w.style.display = "flex";
+            if (cb) cb();
         })
-        .catch(err => console.error("Failed to create session:", err));
+        .catch(e => console.error("Session create failed:", e));
 }
 
-function switchSession(sessionId) {
-    if (sessionId === currentSessionId) return;
-
-    // Close active SSE
-    if (activeSource) {
-        activeSource.close();
-        activeSource = null;
-    }
-    stopTrace();
-    hideTracePanel();
+function switchSession(id) {
+    if (id === currentSessionId) return;
+    if (abortController) { abortController.abort(); abortController = null; }
     isProcessing = false;
     document.getElementById("btn-send").disabled = false;
+    currentSessionId = id;
 
-    currentSessionId = sessionId;
+    document.querySelectorAll(".session-item").forEach(el =>
+        el.classList.toggle("active", el.dataset.sessionId === id)
+    );
 
-    // Update sidebar active state
-    document.querySelectorAll(".session-item").forEach(el => {
-        el.classList.toggle("active", el.dataset.sessionId === sessionId);
-    });
-
-    // Load history
-    loadSessionHistory(sessionId);
+    loadHistory(id);
 }
 
-function loadSessionHistory(sessionId) {
+function loadHistory(id) {
     const container = document.getElementById("messages");
     container.innerHTML = "";
 
-    fetch(`/api/session/${sessionId}/history`)
+    fetch(`/api/session/${id}/history`)
         .then(r => r.json())
         .then(data => {
-            const welcome = document.getElementById("welcome-msg");
-            if (data.messages && data.messages.length > 0) {
-                if (welcome) welcome.style.display = "none";
-                data.messages.forEach(msg => {
-                    if (msg.role !== "system") {
-                        appendMessage(msg.role, msg.content);
-                    }
-                });
+            const w = document.getElementById("welcome-msg");
+            if (data.messages?.length) {
+                if (w) w.style.display = "none";
+                data.messages.forEach(m => { if (m.role !== "system") addMsg(m.role, m.content); });
             } else {
-                if (welcome) welcome.style.display = "flex";
+                if (w) w.style.display = "flex";
             }
-        })
-        .catch(err => console.error("Failed to load history:", err));
+        });
 }
 
 function refreshSessionList() {
@@ -376,7 +397,7 @@ function refreshSessionList() {
         .then(r => r.json())
         .then(data => {
             const list = document.getElementById("session-list");
-            if (!data.sessions || data.sessions.length === 0) {
+            if (!data.sessions?.length) {
                 list.innerHTML = '<div class="session-empty">No sessions yet</div>';
                 return;
             }
@@ -384,57 +405,42 @@ function refreshSessionList() {
                 `<div class="session-item ${s.id === currentSessionId ? "active" : ""}"
                      data-session-id="${s.id}"
                      onclick="switchSession('${s.id}')">
-                    <div class="session-label">${escapeHtml(s.topic_label)}</div>
-                    <div class="session-meta">${s.message_count} msg</div>
+                    <div class="session-label">${esc(s.topic_label)}</div>
+                    <div class="session-meta">${s.message_count} messages</div>
                 </div>`
             ).join("");
         });
 }
 
-document.getElementById("btn-new-session").addEventListener("click", () => {
-    createNewSession();
-});
-
+document.getElementById("btn-new-session").addEventListener("click", () => createNewSession());
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
-function scrollToBottom() {
-    const container = document.getElementById("chat-container");
-    container.scrollTop = container.scrollHeight;
+function scrollBottom() {
+    const el = document.getElementById("chat-scroll");
+    el.scrollTop = el.scrollHeight;
 }
 
-function escapeHtml(text) {
-    const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
+function esc(t) {
+    const m = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    return String(t).replace(/[&<>"']/g, c => m[c]);
 }
 
-function formatMarkdown(text) {
+function md(text) {
     if (!text) return "";
-    // Simple markdown → HTML conversion
-    let html = escapeHtml(text);
-
-    // Bold
-    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    // Italic
-    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    // Inline code
-    html = html.replace(/`(.+?)`/g, "<code>$1</code>");
-    // Headers
-    html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
-    html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-    // Unordered lists
-    html = html.replace(/^\* (.+)$/gm, "<li>$1</li>");
-    html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
-    // Wrap consecutive <li> in <ul>
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
-    // Paragraphs (double newline)
-    html = html.replace(/\n\n/g, "</p><p>");
-    html = `<p>${html}</p>`;
-    // Clean empty paragraphs
-    html = html.replace(/<p>\s*<\/p>/g, "");
-    // Single newlines → <br>
-    html = html.replace(/\n/g, "<br>");
-
-    return html;
+    let h = esc(text);
+    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    h = h.replace(/`(.+?)`/g, "<code>$1</code>");
+    h = h.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    h = h.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+    h = h.replace(/^\* (.+)$/gm, "<li>$1</li>");
+    h = h.replace(/^- (.+)$/gm, "<li>$1</li>");
+    h = h.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+    h = h.replace(/\n\n/g, "</p><p>");
+    h = `<p>${h}</p>`;
+    h = h.replace(/<p>\s*<\/p>/g, "");
+    h = h.replace(/\n/g, "<br>");
+    return h;
 }

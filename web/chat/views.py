@@ -111,14 +111,18 @@ def chat_stream(request):
     thread.start()
 
     def event_generator():
-        """Yield SSE frames from the event queue."""
+        """Yield SSE frames from the event queue with flush-forcing keepalives."""
         try:
+            # Initial keepalive to force connection open
+            yield ": connected\n\n"
+
             while True:
                 try:
-                    event = event_queue.get(timeout=180)
+                    event = event_queue.get(timeout=1.0)
                 except queue.Empty:
-                    yield "data: {\"type\": \"error\", \"content\": \"Timeout waiting for pipeline\"}\n\n"
-                    break
+                    # Keepalive comment — forces WSGI to flush
+                    yield ": heartbeat\n\n"
+                    continue
 
                 yield f"data: {json.dumps(event, default=str)}\n\n"
 
