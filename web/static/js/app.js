@@ -296,8 +296,13 @@ function renderResult(result) {
     div.className = "msg msg-assistant";
 
     let html = '<div class="bubble">';
-    const answer = result.answer_html || result.answer || "No response generated.";
-    html += md(answer);
+    // answer_html is already formatted HTML from the formatter agent — use directly.
+    // answer is raw text — convert with md().
+    if (result.answer_html) {
+        html += result.answer_html;
+    } else {
+        html += md(result.answer || "No response generated.");
+    }
 
     // Credibility badges
     if (result.credibility && Object.keys(result.credibility).length) {
